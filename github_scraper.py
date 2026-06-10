@@ -1,4 +1,5 @@
 import subprocess
+import os
 import json
 import requests
 import re
@@ -17,7 +18,8 @@ def make_gh_request(request: list[str]):
     result = subprocess.run(
         request,
         capture_output=True,
-        text=True
+        text=True,
+        env=os.environ
     )
     if result.returncode != 0:
         raise Exception(f"Error: {result.stderr}")

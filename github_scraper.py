@@ -2,9 +2,18 @@ import subprocess
 import json
 import requests
 import re
+from jinja2 import Template
+
+def minify_graphql(query):
+    query = re.sub(r'#.*$', '', query, flags=re.MULTILINE)
+    query = re.sub(r'\s+', ' ', query)
+    for char in ['{', '}', '(', ')', ':', ',']:
+        query = query.replace(f' {char}', char)
+        query = query.replace(f'{char} ', char)
+    query = query.strip()
+    return query
 
 def make_gh_request(request: list[str]):
-    print(f"Executing a {len("".join(request))} character long request")
     result = subprocess.run(
         request,
         capture_output=True,
@@ -23,52 +32,42 @@ def retrieve_gh_repos_from_topic(topic: str):
     result = json.loads(make_gh_request(request.split(' ')))
     result = [t["fullName"] for t in result]
     return result
- 
-def retrieve_repo_readme(repo: str):
-    request = f"gh repo view {repo}"
-    return make_gh_request(request.split(' '))
 
-def retrieve_repo_infos(repo: str):
-    request = f"gh repo view {repo} --json description,openGraphImageUrl,repositoryTopics"
-    result = json.loads(make_gh_request(request.split(' ')))
-    result["repositoryTopics"] = [t["name"] for t in result["repositoryTopics"]]
-    result["fullName"] = repo
-    result["url"] = f"https://github.com/{repo}"
-    return result
-
-def retrieve_multiple_repos_graphql(repos: list[str]):
-    query_parts = []
-    for i, repo in enumerate(repos):
-        owner, name = repo.split('/')
-        query_parts.append(f"""
-        repo{i}: repository(owner: "{owner}", name: "{name}") {{
-          name
-          description
-          openGraphImageUrl
-          repositoryTopics(first: 10) {{
-            nodes {{
-              topic {{
+def retrieve_multiple_repos_graphql(repos: list[str], additional_files: dict[str, str]):
+    query = Template("""
+        query {
+        {%- for repo in repos %}
+            {%- set owner = repo.split('/')[0] %}
+            {%- set name = repo.split('/')[1] %}
+            {%- set alias = repo.replace('/', '_').replace('-', '_') %}
+            {{ alias }}: repository(owner: "{{ owner }}", name: "{{ name }}") {
                 name
-              }}
-            }}
-          }}
-          readme: object(expression: "HEAD:README.md") {{
-            ... on Blob {{
-              text
-            }}
-          }}
-        }}
-        """)
-    
-    full_query = "query { " + " ".join(query_parts) + " }"
-    
-    cmd = ["gh", "api", "graphql", "-f", f"query={full_query}"]
-    data = json.loads(make_gh_request(cmd))
+                nameWithOwner
+                description
+                openGraphImageUrl
+                repositoryTopics(first: 10) {
+                    nodes {
+                        topic {
+                            name
+                        }
+                    }
+                }
+                {%- for file in additional_files %}
+                {{ file }}: object(expression: "HEAD:{{ additional_files[file] }}") {
+                    ... on Blob {
+                        text
+                    }
+                }
+                {%- endfor %}
+            }
+            {%- endfor %}
+        }
+    """).render(repos=repos, additional_files=additional_files).strip()
+    mini_query = minify_graphql(query)
+    cmd = ["gh", "api", "graphql", "-f", f"query={mini_query}"]
+    data = json.loads(make_gh_request(cmd))["data"]
     return data
 
 if __name__ == "__main__":
-    print()
     repos = retrieve_gh_repos_from_topic("trame")
     retrieve_multiple_repos_graphql(repos)
-    # print(retrieve_repo_readme("Kitware/trame-radial-menu"))
-    # print(json.dumps(retrieve_repo_infos("Kitware/trame-radial-menu"), indent=2))

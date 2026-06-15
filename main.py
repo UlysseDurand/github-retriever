@@ -7,7 +7,8 @@ def process_widgets(repos, ignored_topics = []):
         topics = [node['topic']['name'] for node in repo_data['repositoryTopics']['nodes'] if node['topic']['name'] not in ignored_topics]
         url = f"https://github.com/{repo_data["nameWithOwner"]}"
         table.append({
-            "name": f"[{repo_data['name']}]({url} \"{repo_data['description']}\")",
+            "name": f"[{repo_data['name']}]({url})",
+            "description": f"{repo_data['description']}",
             "image": f"![Repository image]({repo_data['openGraphImageUrl']})" if "openGraphImageUrl" in repo_data else "",
             "topics": "<ul>" + "".join(list(map(lambda topic: f"<li>{topic}</li>", topics))) + "</ul>",
         })
